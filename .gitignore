@@ -1,0 +1,3 @@
+# Never commit personal data
+*.json
+!package.json
