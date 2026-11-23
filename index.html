@@ -194,6 +194,36 @@ dialog .qbtn{background:var(--paper)}
 .bl small{color:var(--muted);display:block}
 .bl button{background:none;border:0;color:var(--out);font-size:20px;padding:4px 8px}
 .toast button{background:none;border:0;color:var(--gold);font-weight:700;padding:2px 0}
+/* Challenges */
+.chs{display:flex;flex-direction:column;gap:14px}
+.ch{background:var(--sheet);border:1px solid var(--line);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.ch-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.ch-top h4{margin:0;font-family:"Bricolage Grotesque",sans-serif;font-size:17px}
+.ch-top p{margin:2px 0 0;font-size:13px;color:var(--muted)}
+.ch-bar{height:10px;border-radius:5px;background:var(--line);overflow:hidden}
+.ch-bar div{height:100%;background:var(--gold);border-radius:5px;transition:width .4s}
+.ch.done .ch-bar div{background:var(--in)}
+.ch-nums{display:flex;justify-content:space-between;font-size:13.5px;color:var(--muted)}
+.ch-nums b{color:var(--ink);font-size:16px}
+.ch-today{display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--gold-soft);border-radius:12px;padding:12px 14px}
+.ch-today .amt{font-family:"Bricolage Grotesque",sans-serif;font-size:24px;font-weight:700}
+.ch-today small{display:block;color:var(--muted);font-size:12.5px}
+.ch-today.ok{background:var(--paper)}
+.ch-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center}
+.ch-stats div{background:var(--paper);border-radius:10px;padding:8px 4px;font-size:12px;color:var(--muted)}
+.ch-stats b{display:block;font-size:16px;color:var(--ink)}
+.days{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.day-t{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-height:52px;border-radius:10px;border:1px solid var(--line);background:var(--paper);font-size:11px;color:var(--muted);padding:4px 2px}
+.day-t b{font-size:12.5px;color:var(--ink)}
+.day-t.done{background:var(--gold);border-color:var(--gold);color:#1B1405}
+.day-t.done b{color:#1B1405}
+.day-t.today{border:2px solid var(--ink)}
+.day-t.missed{border-style:dashed;border-color:var(--out)}
+.day-t[disabled]{opacity:.45}
+.ch-presets{display:flex;gap:6px;flex-wrap:wrap}
+.ch-prev{background:var(--paper);border-radius:12px;padding:12px;font-size:13.5px;display:flex;flex-direction:column;gap:4px}
+.ch-prev b{font-size:15px}
+.ch-acts{display:flex;gap:8px;flex-wrap:wrap}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 @media (max-width:420px){.flow b{font-size:15px}.row2{grid-template-columns:1fr}}
 </style>
@@ -206,6 +236,7 @@ dialog .qbtn{background:var(--paper)}
     <a href="#plan">Plan</a>
     <a href="#transactions">Transactions</a>
     <a href="#goals">Goals</a>
+    <a href="#challenges">Challenges</a>
     <a href="#accounts">Accounts</a>
   </nav>
 </header>
@@ -238,6 +269,10 @@ dialog .qbtn{background:var(--paper)}
       <div class="block-head"><h3>Goals</h3><button class="link" data-go="goals">Manage</button></div>
       <div class="goals" id="goals-mini"></div>
     </div>
+    <div class="block" id="ch-mini-block" hidden>
+      <div class="block-head"><h3>Today's challenge</h3><button class="link" data-go="challenges">All days</button></div>
+      <div class="chs" id="ch-mini"></div>
+    </div>
     <div class="block">
       <div class="block-head"><h3>Recent</h3></div>
       <div class="list" id="recent"></div>
@@ -268,6 +303,12 @@ dialog .qbtn{background:var(--paper)}
     </div>
     <div class="filters" id="filters"></div>
     <div class="list" id="txlist"></div>
+  </section>
+
+  <section id="v-challenges" hidden>
+    <div class="block-head"><h3>Savings challenges</h3><button class="btn sm" id="new-ch">New challenge</button></div>
+    <p class="hint" style="margin-bottom:12px">Save a little every day and grow it. Tick each day when you move the money; the total adds up on its own.</p>
+    <div class="chs" id="ch-list"></div>
   </section>
 
   <section id="v-goals" hidden>
@@ -456,6 +497,31 @@ dialog .qbtn{background:var(--paper)}
   <label>Balance in your bank app (₹)<input class="amount-in num" id="mt-amt" type="number" inputmode="decimal" step="0.01" required></label>
   <p class="hint num" id="mt-diff"></p>
   <div class="dlg-acts"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn">Match balance</button></div>
+</form></dialog>
+
+<dialog id="d-ch"><form class="dlg" method="dialog" id="f-ch">
+  <h3 id="ch-title">New savings challenge</h3>
+  <div class="ch-presets" id="ch-presets">
+    <button type="button" class="chip" data-chp="5,5,100">₹5 +₹5 · 100 days</button>
+    <button type="button" class="chip" data-chp="10,10,50">₹10 +₹10 · 50 days</button>
+    <button type="button" class="chip" data-chp="50,0,30">₹50 daily · 30 days</button>
+  </div>
+  <label>Name<input id="ch-name" type="text" maxlength="30" required placeholder="e.g. 100-day challenge"></label>
+  <div class="row2">
+    <label>Day 1 amount (₹)<input id="ch-start" type="number" inputmode="decimal" min="1" step="1" required></label>
+    <label>Increase each day (₹)<input id="ch-step" type="number" inputmode="decimal" min="0" step="1" required></label>
+  </div>
+  <div class="row2">
+    <label>Number of days<input id="ch-days" type="number" inputmode="numeric" min="1" max="366" required></label>
+    <label>Start date<input id="ch-date" type="date" required></label>
+  </div>
+  <label>Money comes from<select id="ch-acc"></select></label>
+  <div class="ch-prev num" id="ch-prev" aria-live="polite"></div>
+  <p class="hint" id="ch-note" hidden>Days you've already ticked keep the amount you saved. New amounts apply to the days still to come.</p>
+  <div class="dlg-acts">
+    <button type="button" class="btn danger sm" id="ch-del" hidden>Delete</button><span class="spacer"></span>
+    <button type="button" class="btn ghost" data-close>Cancel</button><button class="btn" id="ch-save">Start challenge</button>
+  </div>
 </form></dialog>
 
 <div class="toast" id="toast" role="status"></div>

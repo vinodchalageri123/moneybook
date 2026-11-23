@@ -27,6 +27,8 @@ function normalize(x){
   const c=x.config||{};
   ["accounts","goals","bills","plans"].forEach(k=>{ if(Array.isArray(c[k])) out.config[k]=c[k].filter(v=>v&&typeof v==="object"); });
   if(c.budgets&&typeof c.budgets==="object") out.config.budgets=c.budgets;
+  if(Array.isArray(c.challenges)) out.config.challenges=c.challenges.filter(h=>h&&typeof h==="object"&&/^\d{4}-\d{2}-\d{2}$/.test(h.startDate||"")).slice(0,20)
+    .map(h=>({id:clip(h.id||uid(),64),name:clip(h.name||"Challenge",30),start:Math.max(0,+h.start||0),step:Math.max(0,+h.step||0),days:Math.min(366,Math.max(1,Math.round(+h.days||1))),startDate:h.startDate,acc:clip(h.acc||"",64)}));
   if(Array.isArray(c.buttons)) out.config.buttons=c.buttons.filter(b=>b&&typeof b.name==="string"&&b.name.trim()).slice(0,60)
     .map(b=>({id:clip(b.id||uid(),64),name:clip(b.name,24),emoji:clip(b.emoji||"•",8),cat:clip(b.cat||"Other",24)}));
   if(c.cats&&typeof c.cats==="object") Object.keys(c.cats).slice(0,40).forEach(k=>{ const n=clip(k,24).trim(); if(n&&!(n in BASE_EXP)) out.config.cats[n]=clip(c.cats[k]||"🏷️",8); });
@@ -242,13 +244,14 @@ function planSummary(){
 const dshort = d => d.toLocaleDateString("en-IN",{day:"numeric",month:"short"});
 const ordinal = n => n+(n%10===1&&n!==11?"st":n%10===2&&n!==12?"nd":n%10===3&&n!==13?"rd":"th");
 const accName = id => (S.config.accounts.find(a=>a.id===id)||{}).name||"Deleted account";
-const goalName = id => (S.config.goals.find(g=>g.id===id)||{}).name||"Deleted goal";
+const goalName = id => (S.config.goals.find(g=>g.id===id)||chList().find(h=>h.id===id)||{}).name||"Deleted goal";
 
 /* ---------- render ---------- */
 function render(){
   const bal=balances();
   const goalsTotal=S.config.goals.reduce((s,g)=>s+goalSaved(g),0);
-  $("#worth").textContent=fmt(Object.values(bal).reduce((a,b)=>a+b,0)+goalsTotal);
+  const chTotal=chList().reduce((s,h)=>s+chSaved(h),0);
+  $("#worth").textContent=fmt(Object.values(bal).reduce((a,b)=>a+b,0)+goalsTotal+chTotal);
   const cur=mkey(today()), ms=monthStats(cur);
   $("#m-label").textContent=new Date().toLocaleDateString("en-IN",{month:"long"})+" in";
   $("#m-in").textContent=fmt(ms.inn); $("#m-out").textContent=fmt(ms.out); $("#m-save").textContent=fmt(ms.save);
@@ -262,6 +265,7 @@ function render(){
   }).join("") : `<p class="hint">No spending logged this month yet.</p>`;
 
   renderGoals("#goals-mini", true); renderGoals("#goals", false);
+  renderChallenges();
   renderPlan();
   $("#quick").innerHTML=buttons().map(b=>btnTile(b,false)).join("");
 
@@ -360,11 +364,12 @@ function renderGoals(sel, mini){
 }
 
 /* ---------- routing ---------- */
-const VIEWS=["overview","plan","transactions","goals","accounts"];
+const VIEWS=["overview","plan","transactions","goals","challenges","accounts"];
 function route(){
   const v=VIEWS.includes(location.hash.slice(1))?location.hash.slice(1):"overview";
   VIEWS.forEach(x=>{ $("#v-"+x).hidden=x!==v; });
   document.querySelectorAll("nav a").forEach(a=>a.setAttribute("aria-current",a.getAttribute("href")==="#"+v?"page":"false"));
+  const cur=document.querySelector(`nav a[href="#${v}"]`); if(cur&&cur.scrollIntoView) cur.scrollIntoView({block:"nearest",inline:"nearest"});
 }
 addEventListener("hashchange",route);
 
@@ -385,6 +390,7 @@ $("#tx-cat").onchange=()=>{ $("#tx-newcat-l").hidden=$("#tx-cat").value!=="__new
 function openTx(t,pre){
   pendingLink=pre?pre.link:null;
   if(!S.config.accounts.length){ toast("Add an account first"); location.hash="accounts"; openAcct(); return; }
+  if(t && t.type==="save" && /^cday:/.test(t.plan||"")){ location.hash="challenges"; toast("Tick or untick challenge days in the Challenges tab"); return; }
   if(t && t.type==="save"){ openFund(S.config.goals.find(g=>g.id===t.goal), t); return; }
   editTx=t||null;
   $("#tx-title").textContent=t?"Edit entry":"Add entry"; $("#tx-del").hidden=!t;
@@ -685,6 +691,119 @@ let tt; function toast(m,undo){
   if(undo){ const b=document.createElement("button"); b.type="button"; b.textContent="Undo"; b.onclick=()=>{ t.classList.remove("show","act"); clearTimeout(tt); undo(); }; t.appendChild(b); }
   t.classList.add("show"); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove("show","act"),undo?5000:2000);
 }
+
+/* ---------- savings challenges ---------- */
+const chList=()=>S.config.challenges||[];
+const r2=n=>Math.round(n*100)/100;
+const chAmt=(h,n)=>r2(h.start+(n-1)*h.step);
+const chTarget=h=>r2(h.days*h.start+h.step*h.days*(h.days-1)/2);
+const addDays=(d,n)=>{ const x=new Date(d+"T00:00:00"); x.setDate(x.getDate()+n); return iso(x); };
+const chDayDate=(h,n)=>addDays(h.startDate,n-1);
+const chTodayN=h=>Math.floor((new Date(today()+"T00:00:00")-new Date(h.startDate+"T00:00:00"))/86400000)+1;
+function chEntries(h){ const m={}; allTx().forEach(t=>{ if(t.type==="save"&&t.goal===h.id&&/^cday:\d+$/.test(t.plan||"")) m[+t.plan.slice(5)]=t; }); return m; }
+const chSaved=h=>Object.values(chEntries(h)).reduce((s,t)=>s+t.amount,0);
+function chStats(h){
+  const done=chEntries(h), tn=chTodayN(h), last=Math.min(h.days,tn);
+  let missed=0; for(let n=1;n<Math.min(tn,h.days+1);n++) if(!done[n]) missed++;
+  let streak=0; for(let n=done[last]?last:last-1;n>=1&&done[n];n--) streak++;
+  let next7=0; for(let n=Math.max(1,tn+(done[tn]?1:0));n<=Math.min(h.days,tn+6);n++) if(!done[n]) next7+=chAmt(h,n);
+  const saved=Object.values(done).reduce((s,t)=>s+t.amount,0);
+  return {done,tn,missed,streak,next7:r2(next7),saved:r2(saved),target:chTarget(h),count:Object.keys(done).length,finished:tn>h.days};
+}
+let chOpen={};
+function chTodayBox(h,st){
+  if(st.tn<1) return `<div class="ch-today ok"><span><small>Starts ${new Date(h.startDate+"T00:00:00").toLocaleDateString("en-IN",{day:"numeric",month:"short"})}</small>Day 1 · ${fmt(chAmt(h,1))}</span></div>`;
+  if(st.finished) return `<div class="ch-today ok"><span><small>Challenge finished</small>${st.count} of ${h.days} days saved</span></div>`;
+  const a=st.done[st.tn]?st.done[st.tn].amount:chAmt(h,st.tn);
+  return st.done[st.tn]
+    ? `<div class="ch-today ok"><span><small>Today · Day ${st.tn}</small><span class="amt num">${fmt(a)}</span></span><span>✓ Saved</span></div>`
+    : `<div class="ch-today"><span><small>Today · Day ${st.tn}</small><span class="amt num">${fmt(a)}</span></span><button type="button" class="btn" data-chday="${esc(h.id)}:${st.tn}">Mark saved</button></div>`;
+}
+function chCard(h,mini){
+  const st=chStats(h), pct=Math.min(100,st.saved/st.target*100);
+  const top=`<div class="ch-top"><div><h4>${esc(h.name)}</h4><p class="num">${fmt(h.start)} on day 1${h.step?`, +${fmt(h.step)} each day`:" every day"} · ${h.days} days</p></div>${mini?"":`<button type="button" class="link" data-chedit="${esc(h.id)}">Edit</button>`}</div>`;
+  const bar=`<div class="ch-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pct)}" aria-label="${esc(h.name)} progress"><div style="width:${pct}%"></div></div>
+    <div class="ch-nums num"><span><b>${fmt(st.saved)}</b> saved</span><span>of ${fmt(st.target)} · ${st.count}/${h.days} days</span></div>`;
+  if(mini) return `<div class="ch">${top}${chTodayBox(h,st)}${bar}</div>`;
+  const stats=`<div class="ch-stats num"><div><b>${st.streak}🔥</b>day streak</div><div><b class="${st.missed?"out":""}">${st.missed}</b>missed days</div><div><b>${fmt(st.next7)}</b>next 7 days</div></div>`;
+  let grid="";
+  if(chOpen[h.id]){
+    let tiles=""; for(let n=1;n<=h.days;n++){
+      const d=!!st.done[n], fut=n>st.tn, cls=["day-t",d?"done":"",n===st.tn?"today":"",(!d&&n<st.tn)?"missed":""].join(" ");
+      const amt=d?st.done[n].amount:chAmt(h,n);
+      tiles+=`<button type="button" class="${cls}" data-chday="${esc(h.id)}:${n}" ${fut?"disabled":""} aria-pressed="${d}" aria-label="Day ${n}, ${fmt(amt)}${d?", saved":fut?", upcoming":""}">${n}<b class="num">${fmt(amt)}</b></button>`;
+    }
+    grid=`<div class="days">${tiles}</div><p class="hint">Tap a day to tick or untick it. Missed days can be caught up any time.</p>`;
+  }
+  return `<div class="ch${st.finished&&st.count===h.days?" done":""}">${top}${chTodayBox(h,st)}${bar}${stats}<div class="ch-acts"><button type="button" class="btn ghost sm" data-chgrid="${esc(h.id)}">${chOpen[h.id]?"Hide days":"Show all days"}</button></div>${grid}</div>`;
+}
+function renderChallenges(){
+  const list=chList();
+  $("#ch-list").innerHTML=list.length?list.map(h=>chCard(h,false)).join(""):`<div class="empty">No challenge yet. Start small, like ₹5 today and ₹5 more each day.<br><button class="btn sm" id="ch-empty-new" type="button">Start a challenge</button></div>`;
+  const active=list.filter(h=>{ const n=chTodayN(h); return n>=1&&n<=h.days; });
+  $("#ch-mini-block").hidden=!active.length;
+  $("#ch-mini").innerHTML=active.map(h=>chCard(h,true)).join("");
+}
+function chToggle(id,n){
+  const h=chList().find(x=>x.id===id); if(!h||n<1||n>h.days||n>chTodayN(h)) return;
+  const ex=chEntries(h)[n];
+  if(ex){ const k=removeTx(ex); persist(k); render(); toast(`Day ${n} unticked`,()=>{ persist(putTx(ex)); render(); }); return; }
+  if(!S.config.accounts.some(a=>a.id===h.acc)){ toast("Pick which account the money comes from"); openCh(h); return; }
+  const d=chDayDate(h,n), t={id:uid(),type:"save",goal:h.id,plan:"cday:"+n,amount:chAmt(h,n),acc:h.acc,date:d>today()?today():d,note:`${h.name} · day ${n}`};
+  persist(putTx(t)); render();
+  toast(`Day ${n} saved · ${fmt(t.amount)}`,()=>{ persist(removeTx(t)); render(); });
+}
+let editCh=null;
+function openCh(h){
+  if(!S.config.accounts.length){ toast("Add an account first"); location.hash="accounts"; openAcct(); return; }
+  editCh=h||null;
+  $("#ch-title").textContent=h?"Edit challenge":"New savings challenge"; $("#ch-save").textContent=h?"Save changes":"Start challenge";
+  $("#ch-del").hidden=!h; $("#ch-note").hidden=!h||!Object.keys(chEntries(h)).length; $("#ch-presets").hidden=!!h;
+  $("#ch-name").value=h?h.name:"100-day challenge"; $("#ch-start").value=h?h.start:5; $("#ch-step").value=h?h.step:5; $("#ch-days").value=h?h.days:100;
+  $("#ch-date").value=h?h.startDate:today(); accOpts("#ch-acc",h&&h.acc?h.acc:(lsGet("mb-acc")||S.config.accounts[0].id));
+  chPreview(); $("#d-ch").showModal();
+}
+function chForm(){ return {name:$("#ch-name").value.trim(),start:r2(+$("#ch-start").value),step:r2(+$("#ch-step").value),days:Math.round(+$("#ch-days").value),startDate:$("#ch-date").value,acc:$("#ch-acc").value}; }
+function chPreview(){
+  const f=chForm(), el=$("#ch-prev");
+  if(!(f.start>0)||f.step<0||!(f.days>=1&&f.days<=366)||!f.startDate){ el.innerHTML="Enter the day 1 amount, the daily increase (0 for the same amount every day) and the number of days."; return; }
+  const total=chTarget(f), lastAmt=chAmt(f,f.days), end=new Date(chDayDate(f,f.days)+"T00:00:00");
+  const months={}; for(let n=1;n<=f.days;n++){ const k=chDayDate(f,n).slice(0,7); months[k]=(months[k]||0)+chAmt(f,n); }
+  const mlist=Object.entries(months).map(([k,v])=>`${new Date(k+"-01T00:00:00").toLocaleDateString("en-IN",{month:"short",year:"2-digit"})} ${fmt(v)}`).join(" · ");
+  el.innerHTML=`<span>Day 1 <b>${fmt(f.start)}</b> → Day ${f.days} <b>${fmt(lastAmt)}</b></span><span>Total saved: <b>${fmt(total)}</b> by ${end.toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}</span><span style="color:var(--muted)">${mlist}</span>`;
+}
+["#ch-start","#ch-step","#ch-days","#ch-date"].forEach(s=>$(s).addEventListener("input",chPreview));
+$("#ch-presets").addEventListener("click",e=>{ const b=e.target.closest("[data-chp]"); if(!b) return; const [a,s,d]=b.dataset.chp.split(",").map(Number);
+  $("#ch-start").value=a; $("#ch-step").value=s; $("#ch-days").value=d; $("#ch-name").value=s?`${d}-day challenge`:`${fmt(a)} a day`; chPreview(); });
+$("#f-ch").onsubmit=e=>{
+  const f=chForm();
+  if(!f.name||!(f.start>0)||f.start>100000||f.step<0||f.step>100000||!(f.days>=1&&f.days<=366)||!f.startDate){ e.preventDefault(); toast("Check the amounts and number of days"); return; }
+  if(chTarget(f)>=1e8){ e.preventDefault(); toast("That challenge is too large"); return; }
+  if(editCh){
+    const maxDone=Math.max(0,...Object.keys(chEntries(editCh)).map(Number));
+    if(f.days<maxDone){ e.preventDefault(); toast(`You've already ticked day ${maxDone}. Keep at least ${maxDone} days.`); return; }
+    if(f.startDate!==editCh.startDate&&Object.keys(chEntries(editCh)).length){ e.preventDefault(); toast("The start date can't change after you've ticked days"); return; }
+    Object.assign(S.config.challenges.find(x=>x.id===editCh.id),f);
+  } else {
+    if(chList().length>=20){ e.preventDefault(); toast("That's the maximum number of challenges"); return; }
+    S.config.challenges=[...chList(),{id:"ch-"+uid(),...f}];
+  }
+  lsSet("mb-acc",f.acc); persist("config"); render(); toast(editCh?"Challenge updated":"Challenge started. Tick today when you save!");
+};
+$("#ch-del").onclick=()=>{
+  const n=Object.keys(chEntries(editCh)).length;
+  if(!confirm(n?`Delete this challenge? Its ${n} saved days are removed and the money goes back to the account in your book.`:"Delete this challenge?")) return;
+  const id=editCh.id; S.config.challenges=chList().filter(h=>h.id!==id);
+  Object.keys(S.months).forEach(k=>{ const b=S.months[k].length; S.months[k]=S.months[k].filter(t=>!(t.type==="save"&&t.goal===id)); if(S.months[k].length!==b) persist(k); });
+  persist("config"); $("#d-ch").close(); render(); toast("Challenge deleted");
+};
+$("#new-ch").onclick=()=>openCh();
+document.addEventListener("click",e=>{
+  const d=e.target.closest("[data-chday]"); if(d){ const i=d.dataset.chday.lastIndexOf(":"); chToggle(d.dataset.chday.slice(0,i),+d.dataset.chday.slice(i+1)); return; }
+  const g=e.target.closest("[data-chgrid]"); if(g){ chOpen[g.dataset.chgrid]=!chOpen[g.dataset.chgrid]; renderChallenges(); return; }
+  const ed=e.target.closest("[data-chedit]"); if(ed){ openCh(chList().find(h=>h.id===ed.dataset.chedit)); return; }
+  if(e.target.closest("#ch-empty-new")) openCh();
+});
 
 route(); initStore();
 if(new URLSearchParams(location.search).has("add")){ history.replaceState(null,"",location.pathname+location.hash); setTimeout(openQuick,200); }
