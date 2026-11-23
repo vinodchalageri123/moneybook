@@ -220,6 +220,21 @@ dialog .qbtn{background:var(--paper)}
 .day-t.today{border:2px solid var(--ink)}
 .day-t.missed{border-style:dashed;border-color:var(--out)}
 .day-t[disabled]{opacity:.45}
+.day-rows{display:flex;flex-direction:column;max-height:380px;overflow-y:auto;border:1px solid var(--line);border-radius:12px;background:var(--paper);overscroll-behavior:contain}
+.day-rows.mini{max-height:none;overflow:visible}
+.day-r{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;min-height:56px;padding:8px 14px;border:0;border-top:1px solid var(--line);background:transparent;text-align:left;width:100%}
+.day-r:first-child{border-top:0}
+.day-r .box{width:26px;height:26px;border-radius:8px;border:2px solid var(--muted);display:grid;place-items:center;font-weight:800;font-size:15px;color:#1B1405}
+.day-r .lbl{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 8px;font-size:15px}
+.day-r .lbl small{flex-basis:100%;font-size:12px;color:var(--muted)}
+.day-r .lbl em{font-style:normal;font-size:11.5px;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--blue-soft);color:var(--blue)}
+.day-r.missed .lbl em{background:transparent;color:var(--out);border:1px solid var(--out)}
+.day-r .amt-r{font-weight:700;font-size:16px}
+.day-r.done .box{background:var(--gold);border-color:var(--gold)}
+.day-r.done .amt-r{color:var(--gold)}
+.day-r.today{background:var(--gold-soft)}
+.day-r[disabled]{opacity:.5}
+.day-r:not([disabled]):active{background:var(--gold-soft)}
 .ch-presets{display:flex;gap:6px;flex-wrap:wrap}
 .ch-prev{background:var(--paper);border-radius:12px;padding:12px;font-size:13.5px;display:flex;flex-direction:column;gap:4px}
 .ch-prev b{font-size:15px}
