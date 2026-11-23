@@ -708,8 +708,8 @@ function chStats(h){
   let streak=0; for(let n=done[last]?last:last-1;n>=1&&done[n];n--) streak++;
   let next7=0; for(let n=Math.max(1,tn+(done[tn]?1:0));n<=Math.min(h.days,tn+6);n++) if(!done[n]) next7+=chAmt(h,n);
   const saved=Object.values(done).reduce((s,t)=>s+t.amount,0);
-  const withdrawn=r2(allTx().filter(t=>t.type==="transfer"&&t.acc==="ch:"+h.id).reduce((s,t)=>s+t.amount,0));
-  return {done,tn,missed,streak,next7:r2(next7),saved:r2(saved),withdrawn,pot:r2(saved-withdrawn),target:chTarget(h),count:Object.keys(done).length,finished:tn>h.days};
+  const wds=allTx().filter(t=>t.type==="transfer"&&t.acc==="ch:"+h.id), withdrawn=r2(wds.reduce((s,t)=>s+t.amount,0)), cashouts=wds.length;
+  return {done,tn,missed,streak,next7:r2(next7),saved:r2(saved),withdrawn,cashouts,pot:r2(saved-withdrawn),target:chTarget(h),count:Object.keys(done).length,finished:tn>h.days};
 }
 const dshortD=d=>new Date(d+"T00:00:00").toLocaleDateString("en-IN",{weekday:"short",day:"numeric",month:"short"});
 function dayRow(h,st,n){
@@ -733,7 +733,7 @@ function chCard(h,mini){
   else { const td=st.done[st.tn], a=td?td.amount:chAmt(h,st.tn);
     todayLine=`<div class="ch-nums num" style="align-items:center"><span>Today · Day ${st.tn} · <b>${fmt(a)}</b></span>${td?`<span class="in" style="font-weight:700">✓ Saved</span>`:`<button type="button" class="btn sm" data-chday="${esc(h.id)}:${st.tn}">Mark saved</button>`}</div>`; }
   const remind=h.cashAt>0&&st.pot>=h.cashAt;
-  const potLine=(st.withdrawn>0||st.pot>0)?`<div class="ch-pot${remind?" hit":""}"><span>${remind?`<b>${fmt(h.cashAt)} reached!</b> `:""}In challenge <b class="num">${fmt(st.pot)}</b>${st.withdrawn?` · Moved to cash <b class="num">${fmt(st.withdrawn)}</b>`:""}</span><button type="button" class="btn ${remind?"":"ghost "}sm" data-chwd="${esc(h.id)}">Move to cash</button></div>`:"";
+  const potLine=(st.withdrawn>0||st.pot>0||h.cashAt>0)?`<div class="ch-pot${remind?" hit":""}"><span>${remind?`<b>${fmt(h.cashAt)} reached!</b> `:""}In challenge <b class="num">${fmt(st.pot)}</b>${h.cashAt>0&&!remind?` · <b class="num">${fmt(r2(h.cashAt-st.pot))}</b> more to ${fmt(h.cashAt)}`:""}${st.withdrawn?`<br>Moved to cash so far <b class="num">${fmt(st.withdrawn)}</b>${st.cashouts>1?` (${st.cashouts} times)`:""}`:""}</span><button type="button" class="btn ${remind?"":"ghost "}sm" data-chwd="${esc(h.id)}">Move to cash</button></div>`:"";
   if(mini){
     const from=Math.max(1,Math.min(st.tn-2,h.days-4)), to=Math.min(h.days,from+4);
     let rows=""; for(let n=from;n<=to;n++) rows+=dayRow(h,st,n);
