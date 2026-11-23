@@ -711,6 +711,11 @@ function chStats(h){
   return {done,tn,missed,streak,next7:r2(next7),saved:r2(saved),target:chTarget(h),count:Object.keys(done).length,finished:tn>h.days};
 }
 let chOpen={};
+function dayTile(h,st,n){
+  const d=!!st.done[n], fut=n>st.tn, cls=["day-t",d?"done":"",n===st.tn?"today":"",(!d&&n<st.tn)?"missed":""].join(" ");
+  const amt=d?st.done[n].amount:chAmt(h,n);
+  return `<button type="button" class="${cls}" data-chday="${esc(h.id)}:${n}" ${fut?"disabled":""} aria-pressed="${d}" aria-label="Day ${n}, ${fmt(amt)}${d?", done":fut?", upcoming":", not done"}"><span>${d?"✓ ":""}Day ${n}</span><b class="num">${fmt(amt)}</b></button>`;
+}
 function chTodayBox(h,st){
   if(st.tn<1) return `<div class="ch-today ok"><span><small>Starts ${new Date(h.startDate+"T00:00:00").toLocaleDateString("en-IN",{day:"numeric",month:"short"})}</small>Day 1 · ${fmt(chAmt(h,1))}</span></div>`;
   if(st.finished) return `<div class="ch-today ok"><span><small>Challenge finished</small>${st.count} of ${h.days} days saved</span></div>`;
@@ -724,18 +729,19 @@ function chCard(h,mini){
   const top=`<div class="ch-top"><div><h4>${esc(h.name)}</h4><p class="num">${fmt(h.start)} on day 1${h.step?`, +${fmt(h.step)} each day`:" every day"} · ${h.days} days</p></div>${mini?"":`<button type="button" class="link" data-chedit="${esc(h.id)}">Edit</button>`}</div>`;
   const bar=`<div class="ch-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pct)}" aria-label="${esc(h.name)} progress"><div style="width:${pct}%"></div></div>
     <div class="ch-nums num"><span><b>${fmt(st.saved)}</b> saved</span><span>of ${fmt(st.target)} · ${st.count}/${h.days} days</span></div>`;
-  if(mini) return `<div class="ch">${top}${chTodayBox(h,st)}${bar}</div>`;
-  const stats=`<div class="ch-stats num"><div><b>${st.streak}🔥</b>day streak</div><div><b class="${st.missed?"out":""}">${st.missed}</b>missed days</div><div><b>${fmt(st.next7)}</b>next 7 days</div></div>`;
-  let grid="";
-  if(chOpen[h.id]){
-    let tiles=""; for(let n=1;n<=h.days;n++){
-      const d=!!st.done[n], fut=n>st.tn, cls=["day-t",d?"done":"",n===st.tn?"today":"",(!d&&n<st.tn)?"missed":""].join(" ");
-      const amt=d?st.done[n].amount:chAmt(h,n);
-      tiles+=`<button type="button" class="${cls}" data-chday="${esc(h.id)}:${n}" ${fut?"disabled":""} aria-pressed="${d}" aria-label="Day ${n}, ${fmt(amt)}${d?", saved":fut?", upcoming":""}">${n}<b class="num">${fmt(amt)}</b></button>`;
-    }
-    grid=`<div class="days">${tiles}</div><p class="hint">Tap a day to tick or untick it. Missed days can be caught up any time.</p>`;
+  if(mini){
+    const from=Math.max(1,Math.min(st.tn-3,h.days-6)), to=Math.min(h.days,from+6);
+    let strip=""; for(let n=from;n<=to;n++) strip+=dayTile(h,st,n);
+    return `<div class="ch">${top}${chTodayBox(h,st)}<div class="days">${strip}</div>${bar}</div>`;
   }
-  return `<div class="ch${st.finished&&st.count===h.days?" done":""}">${top}${chTodayBox(h,st)}${bar}${stats}<div class="ch-acts"><button type="button" class="btn ghost sm" data-chgrid="${esc(h.id)}">${chOpen[h.id]?"Hide days":"Show all days"}</button></div>${grid}</div>`;
+  const stats=`<div class="ch-stats num"><div><b>${st.streak}🔥</b>day streak</div><div><b class="${st.missed?"out":""}">${st.missed}</b>missed days</div><div><b>${fmt(st.next7)}</b>next 7 days</div></div>`;
+  const open=chOpen[h.id]!==false;
+  let grid="";
+  if(open){
+    let tiles=""; for(let n=1;n<=h.days;n++) tiles+=dayTile(h,st,n);
+    grid=`<div class="days">${tiles}</div><p class="hint">Tap a day to mark it done. Tap again to undo. Missed days can be caught up any time.</p>`;
+  }
+  return `<div class="ch${st.finished&&st.count===h.days?" done":""}">${top}${chTodayBox(h,st)}${bar}${stats}<div class="ch-acts"><button type="button" class="btn ghost sm" data-chgrid="${esc(h.id)}">${open?"Hide days":"Show all days"}</button></div>${grid}</div>`;
 }
 function renderChallenges(){
   const list=chList();
@@ -800,7 +806,7 @@ $("#ch-del").onclick=()=>{
 $("#new-ch").onclick=()=>openCh();
 document.addEventListener("click",e=>{
   const d=e.target.closest("[data-chday]"); if(d){ const i=d.dataset.chday.lastIndexOf(":"); chToggle(d.dataset.chday.slice(0,i),+d.dataset.chday.slice(i+1)); return; }
-  const g=e.target.closest("[data-chgrid]"); if(g){ chOpen[g.dataset.chgrid]=!chOpen[g.dataset.chgrid]; renderChallenges(); return; }
+  const g=e.target.closest("[data-chgrid]"); if(g){ chOpen[g.dataset.chgrid]=chOpen[g.dataset.chgrid]===false; renderChallenges(); return; }
   const ed=e.target.closest("[data-chedit]"); if(ed){ openCh(chList().find(h=>h.id===ed.dataset.chedit)); return; }
   if(e.target.closest("#ch-empty-new")) openCh();
 });

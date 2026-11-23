@@ -1,5 +1,5 @@
 // Money Book service worker: makes the app open offline. It never sees your entries (they live in the page's local storage).
-const CACHE = "moneybook-v5";
+const CACHE = "moneybook-v6";
 const CORE = ["./", "./index.html", "./manifest.webmanifest", "./icon.svg", "./icon-192.png", "./icon-512.png", "./icon-maskable-512.png", "./vendor/supabase.js", "./app.js"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => {
