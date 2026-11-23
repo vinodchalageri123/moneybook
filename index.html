@@ -235,6 +235,9 @@ dialog .qbtn{background:var(--paper)}
 .day-r.today{background:var(--gold-soft)}
 .day-r[disabled]{opacity:.5}
 .day-r:not([disabled]):active{background:var(--gold-soft)}
+.ch-pot{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13.5px;color:var(--muted);flex-wrap:wrap}
+.ch-pot b{color:var(--ink)}
+.ch-pot.hit{background:var(--gold-soft);border-radius:12px;padding:10px 12px;color:var(--ink)}
 .ch-presets{display:flex;gap:6px;flex-wrap:wrap}
 .ch-prev{background:var(--paper);border-radius:12px;padding:12px;font-size:13.5px;display:flex;flex-direction:column;gap:4px}
 .ch-prev b{font-size:15px}
@@ -530,13 +533,27 @@ dialog .qbtn{background:var(--paper)}
     <label>Number of days<input id="ch-days" type="number" inputmode="numeric" min="1" max="366" required></label>
     <label>Start date<input id="ch-date" type="date" required></label>
   </div>
-  <label>Money comes from<select id="ch-acc"></select></label>
+  <div class="row2">
+    <label>Money comes from<select id="ch-acc"></select></label>
+    <label>Remind me to move it at (₹)<input id="ch-cashat" type="number" inputmode="numeric" min="0" step="1" placeholder="Off"></label>
+  </div>
   <div class="ch-prev num" id="ch-prev" aria-live="polite"></div>
   <p class="hint" id="ch-note" hidden>Days you've already ticked keep the amount you saved. New amounts apply to the days still to come.</p>
   <div class="dlg-acts">
     <button type="button" class="btn danger sm" id="ch-del" hidden>Delete</button><span class="spacer"></span>
     <button type="button" class="btn ghost" data-close>Cancel</button><button class="btn" id="ch-save">Start challenge</button>
   </div>
+</form></dialog>
+
+<dialog id="d-wd"><form class="dlg" method="dialog" id="f-wd">
+  <h3 id="wd-title">Move to cash</h3>
+  <label>Amount (₹)<input class="amount-in num" id="wd-amt" type="number" inputmode="decimal" min="1" step="0.01" required></label>
+  <div class="row2">
+    <label>Move to<select id="wd-acc"></select></label>
+    <label>Date<input id="wd-date" type="date" required></label>
+  </div>
+  <p class="hint" id="wd-hint"></p>
+  <div class="dlg-acts"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn">Move money</button></div>
 </form></dialog>
 
 <div class="toast" id="toast" role="status"></div>

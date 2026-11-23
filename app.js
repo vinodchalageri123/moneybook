@@ -28,7 +28,7 @@ function normalize(x){
   ["accounts","goals","bills","plans"].forEach(k=>{ if(Array.isArray(c[k])) out.config[k]=c[k].filter(v=>v&&typeof v==="object"); });
   if(c.budgets&&typeof c.budgets==="object") out.config.budgets=c.budgets;
   if(Array.isArray(c.challenges)) out.config.challenges=c.challenges.filter(h=>h&&typeof h==="object"&&/^\d{4}-\d{2}-\d{2}$/.test(h.startDate||"")).slice(0,20)
-    .map(h=>({id:clip(h.id||uid(),64),name:clip(h.name||"Challenge",30),start:Math.max(0,+h.start||0),step:Math.max(0,+h.step||0),days:Math.min(366,Math.max(1,Math.round(+h.days||1))),startDate:h.startDate,acc:clip(h.acc||"",64)}));
+    .map(h=>({id:clip(h.id||uid(),64),name:clip(h.name||"Challenge",30),start:Math.max(0,+h.start||0),step:Math.max(0,+h.step||0),days:Math.min(366,Math.max(1,Math.round(+h.days||1))),startDate:h.startDate,acc:clip(h.acc||"",64),cashAt:Math.max(0,+h.cashAt||0)}));
   if(Array.isArray(c.buttons)) out.config.buttons=c.buttons.filter(b=>b&&typeof b.name==="string"&&b.name.trim()).slice(0,60)
     .map(b=>({id:clip(b.id||uid(),64),name:clip(b.name,24),emoji:clip(b.emoji||"•",8),cat:clip(b.cat||"Other",24)}));
   if(c.cats&&typeof c.cats==="object") Object.keys(c.cats).slice(0,40).forEach(k=>{ const n=clip(k,24).trim(); if(n&&!(n in BASE_EXP)) out.config.cats[n]=clip(c.cats[k]||"🏷️",8); });
@@ -243,7 +243,7 @@ function planSummary(){
 }
 const dshort = d => d.toLocaleDateString("en-IN",{day:"numeric",month:"short"});
 const ordinal = n => n+(n%10===1&&n!==11?"st":n%10===2&&n!==12?"nd":n%10===3&&n!==13?"rd":"th");
-const accName = id => (S.config.accounts.find(a=>a.id===id)||{}).name||"Deleted account";
+const accName = id => (String(id).startsWith("ch:")?((chList().find(h=>"ch:"+h.id===id)||{}).name||"Old challenge"):(S.config.accounts.find(a=>a.id===id)||{}).name)||"Deleted account";
 const goalName = id => (S.config.goals.find(g=>g.id===id)||chList().find(h=>h.id===id)||{}).name||"Deleted goal";
 
 /* ---------- render ---------- */
@@ -390,7 +390,7 @@ $("#tx-cat").onchange=()=>{ $("#tx-newcat-l").hidden=$("#tx-cat").value!=="__new
 function openTx(t,pre){
   pendingLink=pre?pre.link:null;
   if(!S.config.accounts.length){ toast("Add an account first"); location.hash="accounts"; openAcct(); return; }
-  if(t && t.type==="save" && /^cday:/.test(t.plan||"")){ location.hash="challenges"; toast("Tick or untick challenge days in the Challenges tab"); return; }
+  if(t && ((t.type==="save" && /^cday:/.test(t.plan||""))||(t.type==="transfer"&&String(t.acc).startsWith("ch:")))){ location.hash="challenges"; toast("Tick or untick challenge days in the Challenges tab"); return; }
   if(t && t.type==="save"){ openFund(S.config.goals.find(g=>g.id===t.goal), t); return; }
   editTx=t||null;
   $("#tx-title").textContent=t?"Edit entry":"Add entry"; $("#tx-del").hidden=!t;
@@ -708,7 +708,8 @@ function chStats(h){
   let streak=0; for(let n=done[last]?last:last-1;n>=1&&done[n];n--) streak++;
   let next7=0; for(let n=Math.max(1,tn+(done[tn]?1:0));n<=Math.min(h.days,tn+6);n++) if(!done[n]) next7+=chAmt(h,n);
   const saved=Object.values(done).reduce((s,t)=>s+t.amount,0);
-  return {done,tn,missed,streak,next7:r2(next7),saved:r2(saved),target:chTarget(h),count:Object.keys(done).length,finished:tn>h.days};
+  const withdrawn=r2(allTx().filter(t=>t.type==="transfer"&&t.acc==="ch:"+h.id).reduce((s,t)=>s+t.amount,0));
+  return {done,tn,missed,streak,next7:r2(next7),saved:r2(saved),withdrawn,pot:r2(saved-withdrawn),target:chTarget(h),count:Object.keys(done).length,finished:tn>h.days};
 }
 const dshortD=d=>new Date(d+"T00:00:00").toLocaleDateString("en-IN",{weekday:"short",day:"numeric",month:"short"});
 function dayRow(h,st,n){
@@ -731,14 +732,16 @@ function chCard(h,mini){
   else if(st.finished) todayLine=`<div class="ch-nums"><span>Challenge finished</span><span><b>${st.count}</b> of ${h.days} days saved</span></div>`;
   else { const td=st.done[st.tn], a=td?td.amount:chAmt(h,st.tn);
     todayLine=`<div class="ch-nums num" style="align-items:center"><span>Today · Day ${st.tn} · <b>${fmt(a)}</b></span>${td?`<span class="in" style="font-weight:700">✓ Saved</span>`:`<button type="button" class="btn sm" data-chday="${esc(h.id)}:${st.tn}">Mark saved</button>`}</div>`; }
+  const remind=h.cashAt>0&&st.pot>=h.cashAt;
+  const potLine=(st.withdrawn>0||st.pot>0)?`<div class="ch-pot${remind?" hit":""}"><span>${remind?`<b>${fmt(h.cashAt)} reached!</b> `:""}In challenge <b class="num">${fmt(st.pot)}</b>${st.withdrawn?` · Moved to cash <b class="num">${fmt(st.withdrawn)}</b>`:""}</span><button type="button" class="btn ${remind?"":"ghost "}sm" data-chwd="${esc(h.id)}">Move to cash</button></div>`:"";
   if(mini){
     const from=Math.max(1,Math.min(st.tn-2,h.days-4)), to=Math.min(h.days,from+4);
     let rows=""; for(let n=from;n<=to;n++) rows+=dayRow(h,st,n);
-    return `<div class="ch">${top}${savedBox}${bar}${todayLine}<div class="day-rows mini">${rows}</div></div>`;
+    return `<div class="ch">${top}${savedBox}${potLine}${bar}${todayLine}<div class="day-rows mini">${rows}</div></div>`;
   }
   const stats=`<div class="ch-stats num"><div><b>${st.streak}🔥</b>day streak</div><div><b class="${st.missed?"out":""}">${st.missed}</b>missed days</div><div><b>${fmt(st.next7)}</b>next 7 days</div></div>`;
   let rows=""; for(let n=1;n<=h.days;n++) rows+=dayRow(h,st,n);
-  return `<div class="ch${st.finished&&st.count===h.days?" done":""}">${top}${savedBox}${bar}${todayLine}${stats}<div class="day-rows" data-rows="${esc(h.id)}">${rows}</div><p class="hint">Tap a day to mark it done, tap again to undo. Missed days can be caught up any time.</p></div>`;
+  return `<div class="ch${st.finished&&st.count===h.days?" done":""}">${top}${savedBox}${potLine}${bar}${todayLine}${stats}<div class="day-rows" data-rows="${esc(h.id)}">${rows}</div><p class="hint">Tap a day to mark it done, tap again to undo. Missed days can be caught up any time.</p></div>`;
 }
 const chScroll={};
 function renderChallenges(){
@@ -770,10 +773,11 @@ function openCh(h){
   $("#ch-title").textContent=h?"Edit challenge":"New savings challenge"; $("#ch-save").textContent=h?"Save changes":"Start challenge";
   $("#ch-del").hidden=!h; $("#ch-note").hidden=!h||!Object.keys(chEntries(h)).length; $("#ch-presets").hidden=!!h;
   $("#ch-name").value=h?h.name:"100-day challenge"; $("#ch-start").value=h?h.start:5; $("#ch-step").value=h?h.step:5; $("#ch-days").value=h?h.days:100;
+  $("#ch-cashat").value=h?(h.cashAt||""):500;
   $("#ch-date").value=h?h.startDate:today(); accOpts("#ch-acc",h&&h.acc?h.acc:(lsGet("mb-acc")||S.config.accounts[0].id));
   chPreview(); $("#d-ch").showModal();
 }
-function chForm(){ return {name:$("#ch-name").value.trim(),start:r2(+$("#ch-start").value),step:r2(+$("#ch-step").value),days:Math.round(+$("#ch-days").value),startDate:$("#ch-date").value,acc:$("#ch-acc").value}; }
+function chForm(){ return {name:$("#ch-name").value.trim(),start:r2(+$("#ch-start").value),step:r2(+$("#ch-step").value),days:Math.round(+$("#ch-days").value),startDate:$("#ch-date").value,acc:$("#ch-acc").value,cashAt:Math.max(0,r2(+$("#ch-cashat").value||0))}; }
 function chPreview(){
   const f=chForm(), el=$("#ch-prev");
   if(!(f.start>0)||f.step<0||!(f.days>=1&&f.days<=366)||!f.startDate){ el.innerHTML="Enter the day 1 amount, the daily increase (0 for the same amount every day) and the number of days."; return; }
@@ -812,7 +816,27 @@ document.addEventListener("click",e=>{
   const d=e.target.closest("[data-chday]"); if(d){ const i=d.dataset.chday.lastIndexOf(":"); chToggle(d.dataset.chday.slice(0,i),+d.dataset.chday.slice(i+1)); return; }
   const ed=e.target.closest("[data-chedit]"); if(ed){ openCh(chList().find(h=>h.id===ed.dataset.chedit)); return; }
   if(e.target.closest("#ch-empty-new")) openCh();
+  const w=e.target.closest("[data-chwd]"); if(w) openWd(w.dataset.chwd);
 });
+
+/* ---------- move challenge money to cash ---------- */
+let wdCh=null;
+function openWd(id){
+  const h=chList().find(x=>x.id===id); if(!h) return; const st=chStats(h);
+  if(!(st.pot>0)){ toast("Nothing in this challenge to move yet"); return; }
+  wdCh=h; $("#wd-title").textContent=`Move ${h.name} money`;
+  $("#wd-amt").value=st.pot; $("#wd-amt").max=st.pot; $("#wd-date").value=today();
+  const cash=S.config.accounts.find(a=>a.type==="Cash"); accOpts("#wd-acc",cash?cash.id:S.config.accounts[0].id);
+  $("#wd-hint").textContent=`Up to ${fmt(st.pot)} is in this challenge. Your days and streak stay exactly as they are.`;
+  $("#d-wd").showModal();
+}
+$("#f-wd").onsubmit=e=>{
+  const st=chStats(wdCh), amount=r2(+$("#wd-amt").value);
+  if(!(amount>0)||amount>st.pot+0.001){ e.preventDefault(); toast(`Enter up to ${fmt(st.pot)}`); return; }
+  const t={id:uid(),type:"transfer",acc:"ch:"+wdCh.id,to:$("#wd-acc").value,amount,date:$("#wd-date").value||today(),note:`${wdCh.name} savings`};
+  persist(putTx(t)); render();
+  toast(`${fmt(amount)} moved to ${accName(t.to)}`,()=>{ persist(removeTx(t)); render(); });
+};
 
 route(); initStore();
 if(new URLSearchParams(location.search).has("add")){ history.replaceState(null,"",location.pathname+location.hash); setTimeout(openQuick,200); }
